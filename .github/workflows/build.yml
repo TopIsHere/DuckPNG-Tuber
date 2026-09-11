@@ -3,19 +3,22 @@ name: Build Duck PNGTuber
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   build-windows:
-    name: Build Windows x64
+    name: Build Windows x64 (OBS 32.0.1)
     runs-on: windows-2022
 
     steps:
-      - name: Checkout plugin
+      # Get the Duck PNGTuber source
+      - name: Checkout Duck PNGTuber
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # Get the exact OBS version we're targeting
       - name: Checkout OBS 32.0.1
         uses: actions/checkout@v4
         with:
@@ -25,40 +28,92 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Build OBS 32.0.1
+      # Build OBS and its development files
+      - name: Build OBS 32.0.1 development files
         shell: pwsh
         working-directory: obs-studio
         run: |
-          .\.github\scripts\Build-Windows.ps1 `
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "Building OBS 32.0.1..."
+
+          & .\.github\scripts\Build-Windows.ps1 `
             -Target x64 `
             -Configuration RelWithDebInfo
 
-      - name: Configure plugin
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      # Configure the Duck PNGTuber plugin
+      - name: Configure Duck PNGTuber
         shell: pwsh
         run: |
-          cmake -S . -B build `
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "Configuring Duck PNGTuber..."
+
+          cmake `
+            -S . `
+            -B build `
             -G "Visual Studio 17 2022" `
             -A x64 `
             -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\obs-studio\build_x64\install"
 
-      - name: Build plugin
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      # Compile the plugin
+      - name: Build Duck PNGTuber
         shell: pwsh
         run: |
-          cmake --build build `
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "Building Duck PNGTuber..."
+
+          cmake `
+            --build build `
             --config RelWithDebInfo `
             --parallel
 
-      - name: Collect plugin
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      # Put everything needed into one artifact
+      - name: Collect plugin files
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force artifact
-          Copy-Item "build\RelWithDebInfo\duck-pngtuber.dll" "artifact\"
-          Copy-Item "data\idle.png" "artifact\"
-          Copy-Item "data\talking.png" "artifact\"
-          Copy-Item "README.md" "artifact\"
+          $ErrorActionPreference = "Stop"
 
-      - name: Upload plugin
+          Write-Host "Collecting plugin files..."
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path artifact | Out-Null
+
+          Copy-Item `
+            "build\RelWithDebInfo\duck-pngtuber.dll" `
+            "artifact\duck-pngtuber.dll"
+
+          Copy-Item `
+            "data\idle.png" `
+            "artifact\idle.png"
+
+          Copy-Item `
+            "data\talking.png" `
+            "artifact\talking.png"
+
+          Copy-Item `
+            "README.md" `
+            "artifact\README.md"
+
+      # Make the compiled plugin downloadable from GitHub Actions
+      - name: Upload Duck PNGTuber artifact
         uses: actions/upload-artifact@v4
         with:
           name: DuckPNG-Tuber-OBS-32.0.1-Windows-x64
           path: artifact
+          if-no-files-found: error
