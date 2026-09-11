@@ -1,0 +1,64 @@
+name: Build Duck PNGTuber
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout OBS 32.0.1
+        uses: actions/checkout@v4
+        with:
+          repository: obsproject/obs-studio
+          ref: 32.0.1
+          path: obs-studio
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Build OBS 32.0.1
+        shell: pwsh
+        working-directory: obs-studio
+        run: |
+          .\.github\scripts\Build-Windows.ps1 `
+            -Target x64 `
+            -Configuration RelWithDebInfo
+
+      - name: Configure plugin
+        shell: pwsh
+        run: |
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\obs-studio\build_x64\install"
+
+      - name: Build plugin
+        shell: pwsh
+        run: |
+          cmake --build build `
+            --config RelWithDebInfo `
+            --parallel
+
+      - name: Collect plugin
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifact
+          Copy-Item "build\RelWithDebInfo\duck-pngtuber.dll" "artifact\"
+          Copy-Item "data\idle.png" "artifact\"
+          Copy-Item "data\talking.png" "artifact\"
+          Copy-Item "README.md" "artifact\"
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: DuckPNG-Tuber-OBS-32.0.1-Windows-x64
+          path: artifact
