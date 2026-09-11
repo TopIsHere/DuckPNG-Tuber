@@ -1,0 +1,3 @@
+Target OBS: 32.0.1
+Architecture: Windows x64
+Plugin type: native OBS source (DLL)
