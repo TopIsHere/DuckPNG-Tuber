@@ -122,48 +122,63 @@ jobs:
           Write-Host " Configuring Duck PNGTuber"
           Write-Host "======================================"
 
-          Write-Host ""
-          Write-Host "libobs CMake directory:"
-          Write-Host $env:LIBOBS_DIR
-          Write-Host ""
+          $obsRoot = "$env:GITHUB_WORKSPACE\obs-studio"
 
+          # Find libobsConfig.cmake
+          Write-Host ""
+          Write-Host "Searching for libobsConfig.cmake..."
+
+          $libobsConfig = Get-ChildItem `
+            $obsRoot `
+            -Recurse `
+            -Filter "libobsConfig.cmake" `
+            -File `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+          if (-not $libobsConfig) {
+            throw "Could not find libobsConfig.cmake"
+          }
+
+          $libobsDir = $libobsConfig.Directory.FullName
+
+          Write-Host "FOUND:"
+          Write-Host $libobsConfig.FullName
+
+          # Find w32-pthreadsConfig.cmake
+          Write-Host ""
           Write-Host "Searching for w32-pthreadsConfig.cmake..."
 
           $pthreadConfig = Get-ChildItem `
-            "$env:GITHUB_WORKSPACE\obs-studio" `
+            $obsRoot `
             -Recurse `
             -Filter "w32-pthreadsConfig.cmake" `
             -File `
-            -ErrorAction SilentlyContinue
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
 
           if (-not $pthreadConfig) {
-            Write-Host ""
-            Write-Host "ERROR: w32-pthreadsConfig.cmake was not found."
-            Write-Host ""
-            Write-Host "Searching for pthread-related CMake files..."
-
-            Get-ChildItem `
-              "$env:GITHUB_WORKSPACE\obs-studio" `
-              -Recurse `
-              -Include "*pthread*.cmake" `
-              -File `
-              -ErrorAction SilentlyContinue |
-              Select-Object -First 100 FullName
-
-            throw "Could not find w32-pthreadsConfig.cmake."
+            throw "Could not find w32-pthreadsConfig.cmake"
           }
 
-          Write-Host ""
+          $pthreadDir = $pthreadConfig.Directory.FullName
+
           Write-Host "FOUND:"
-          Write-Host $pthreadConfig[0].FullName
-
-          $pthreadDir = $pthreadConfig[0].Directory.FullName
+          Write-Host $pthreadConfig.FullName
 
           Write-Host ""
-          Write-Host "w32-pthreads CMake directory:"
+          Write-Host "======================================"
+          Write-Host " CMake paths"
+          Write-Host "======================================"
+          Write-Host ""
+          Write-Host "libobs:"
+          Write-Host $libobsDir
+          Write-Host ""
+          Write-Host "w32-pthreads:"
           Write-Host $pthreadDir
           Write-Host ""
 
+          # Configure
           Write-Host "Running CMake..."
 
           cmake `
@@ -171,7 +186,7 @@ jobs:
             -B build `
             -G "Visual Studio 17 2022" `
             -A x64 `
-            "-Dlibobs_DIR=$env:LIBOBS_DIR" `
+            "-Dlibobs_DIR=$libobsDir" `
             "-Dw32-pthreads_DIR=$pthreadDir"
 
           if ($LASTEXITCODE -ne 0) {
