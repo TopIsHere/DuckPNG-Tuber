@@ -12,13 +12,17 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      # Get the Duck PNGTuber source
+      # ------------------------------------------------------------
+      # Checkout Duck PNGTuber
+      # ------------------------------------------------------------
       - name: Checkout Duck PNGTuber
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Get the exact OBS version we're targeting
+      # ------------------------------------------------------------
+      # Checkout OBS 32.0.1
+      # ------------------------------------------------------------
       - name: Checkout OBS 32.0.1
         uses: actions/checkout@v4
         with:
@@ -28,14 +32,18 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      # Build OBS and its development files
-      - name: Build OBS 32.0.1 development files
+      # ------------------------------------------------------------
+      # Build OBS
+      # ------------------------------------------------------------
+      - name: Build OBS 32.0.1
         shell: pwsh
         working-directory: obs-studio
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Building OBS 32.0.1..."
+          Write-Host "========================================"
+          Write-Host " Building OBS 32.0.1"
+          Write-Host "========================================"
 
           & .\.github\scripts\Build-Windows.ps1 `
             -Target x64 `
@@ -45,32 +53,100 @@ jobs:
             exit $LASTEXITCODE
           }
 
-      # Configure the Duck PNGTuber plugin
+      # ------------------------------------------------------------
+      # Find libobsConfig.cmake automatically
+      # ------------------------------------------------------------
+      - name: Find libobs CMake package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "========================================"
+          Write-Host " Searching for libobsConfig.cmake"
+          Write-Host "========================================"
+
+          $matches = Get-ChildItem `
+            -Path "$env:GITHUB_WORKSPACE\obs-studio" `
+            -Filter "libobsConfig.cmake" `
+            -Recurse `
+            -File `
+            -ErrorAction SilentlyContinue
+
+          if (-not $matches) {
+            Write-Host ""
+            Write-Host "ERROR: libobsConfig.cmake was not found."
+            Write-Host ""
+            Write-Host "Searching for anything containing 'libobs'..."
+            
+            Get-ChildItem `
+              -Path "$env:GITHUB_WORKSPACE\obs-studio" `
+              -Recurse `
+              -File `
+              -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Name -match "libobs"
+              } |
+              Select-Object -First 100 FullName
+
+            exit 1
+          }
+
+          Write-Host ""
+          Write-Host "Found:"
+          
+          foreach ($file in $matches) {
+            Write-Host $file.FullName
+          }
+
+          # The directory containing libobsConfig.cmake
+          $libobsDir = $matches[0].Directory.FullName
+
+          Write-Host ""
+          Write-Host "Using libobs directory:"
+          Write-Host $libobsDir
+
+          # Export it for the next GitHub Actions steps
+          "LIBOBS_CMAKE_DIR=$libobsDir" | Out-File `
+            -FilePath $env:GITHUB_ENV `
+            -Encoding utf8
+
+      # ------------------------------------------------------------
+      # Configure Duck PNGTuber
+      # ------------------------------------------------------------
       - name: Configure Duck PNGTuber
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Configuring Duck PNGTuber..."
+          Write-Host "========================================"
+          Write-Host " Configuring Duck PNGTuber"
+          Write-Host "========================================"
+
+          Write-Host "libobs CMake directory:"
+          Write-Host $env:LIBOBS_CMAKE_DIR
 
           cmake `
             -S . `
             -B build `
             -G "Visual Studio 17 2022" `
             -A x64 `
-            -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\obs-studio\build_x64\install"
+            -Dlibobs_DIR="$env:LIBOBS_CMAKE_DIR"
 
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
 
-      # Compile the plugin
+      # ------------------------------------------------------------
+      # Build Duck PNGTuber
+      # ------------------------------------------------------------
       - name: Build Duck PNGTuber
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Building Duck PNGTuber..."
+          Write-Host "========================================"
+          Write-Host " Building Duck PNGTuber"
+          Write-Host "========================================"
 
           cmake `
             --build build `
@@ -81,21 +157,32 @@ jobs:
             exit $LASTEXITCODE
           }
 
-      # Put everything needed into one artifact
+      # ------------------------------------------------------------
+      # Collect plugin
+      # ------------------------------------------------------------
       - name: Collect plugin files
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Collecting plugin files..."
+          Write-Host "========================================"
+          Write-Host " Collecting plugin files"
+          Write-Host "========================================"
 
           New-Item `
             -ItemType Directory `
             -Force `
             -Path artifact | Out-Null
 
+          $dll = "build\RelWithDebInfo\duck-pngtuber.dll"
+
+          if (-not (Test-Path $dll)) {
+            Write-Host "ERROR: Plugin DLL was not created."
+            exit 1
+          }
+
           Copy-Item `
-            "build\RelWithDebInfo\duck-pngtuber.dll" `
+            $dll `
             "artifact\duck-pngtuber.dll"
 
           Copy-Item `
@@ -110,8 +197,10 @@ jobs:
             "README.md" `
             "artifact\README.md"
 
-      # Make the compiled plugin downloadable from GitHub Actions
-      - name: Upload Duck PNGTuber artifact
+      # ------------------------------------------------------------
+      # Upload artifact
+      # ------------------------------------------------------------
+      - name: Upload Duck PNGTuber
         uses: actions/upload-artifact@v4
         with:
           name: DuckPNG-Tuber-OBS-32.0.1-Windows-x64
