@@ -118,91 +118,62 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "========================================"
+          Write-Host "======================================"
           Write-Host " Configuring Duck PNGTuber"
-          Write-Host "========================================"
+          Write-Host "======================================"
 
+          Write-Host ""
           Write-Host "libobs CMake directory:"
-          Write-Host $env:LIBOBS_CMAKE_DIR
+          Write-Host $env:LIBOBS_DIR
+          Write-Host ""
+
+          Write-Host "Searching for w32-pthreadsConfig.cmake..."
+
+          $pthreadConfig = Get-ChildItem `
+            "$env:GITHUB_WORKSPACE\obs-studio" `
+            -Recurse `
+            -Filter "w32-pthreadsConfig.cmake" `
+            -File `
+            -ErrorAction SilentlyContinue
+
+          if (-not $pthreadConfig) {
+            Write-Host ""
+            Write-Host "ERROR: w32-pthreadsConfig.cmake was not found."
+            Write-Host ""
+            Write-Host "Searching for pthread-related CMake files..."
+
+            Get-ChildItem `
+              "$env:GITHUB_WORKSPACE\obs-studio" `
+              -Recurse `
+              -Include "*pthread*.cmake" `
+              -File `
+              -ErrorAction SilentlyContinue |
+              Select-Object -First 100 FullName
+
+            throw "Could not find w32-pthreadsConfig.cmake."
+          }
+
+          Write-Host ""
+          Write-Host "FOUND:"
+          Write-Host $pthreadConfig[0].FullName
+
+          $pthreadDir = $pthreadConfig[0].Directory.FullName
+
+          Write-Host ""
+          Write-Host "w32-pthreads CMake directory:"
+          Write-Host $pthreadDir
+          Write-Host ""
+
+          Write-Host "Running CMake..."
 
           cmake `
             -S . `
             -B build `
             -G "Visual Studio 17 2022" `
             -A x64 `
-            -Dlibobs_DIR="$env:LIBOBS_CMAKE_DIR"
+            "-Dlibobs_DIR=$env:LIBOBS_DIR" `
+            "-Dw32-pthreads_DIR=$pthreadDir"
 
           if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+            throw "Plugin CMake configuration failed."
           }
-
-      # ------------------------------------------------------------
-      # Build Duck PNGTuber
-      # ------------------------------------------------------------
-      - name: Build Duck PNGTuber
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Write-Host "========================================"
-          Write-Host " Building Duck PNGTuber"
-          Write-Host "========================================"
-
-          cmake `
-            --build build `
-            --config RelWithDebInfo `
-            --parallel
-
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
-      # ------------------------------------------------------------
-      # Collect plugin
-      # ------------------------------------------------------------
-      - name: Collect plugin files
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Write-Host "========================================"
-          Write-Host " Collecting plugin files"
-          Write-Host "========================================"
-
-          New-Item `
-            -ItemType Directory `
-            -Force `
-            -Path artifact | Out-Null
-
-          $dll = "build\RelWithDebInfo\duck-pngtuber.dll"
-
-          if (-not (Test-Path $dll)) {
-            Write-Host "ERROR: Plugin DLL was not created."
-            exit 1
-          }
-
-          Copy-Item `
-            $dll `
-            "artifact\duck-pngtuber.dll"
-
-          Copy-Item `
-            "data\idle.png" `
-            "artifact\idle.png"
-
-          Copy-Item `
-            "data\talking.png" `
-            "artifact\talking.png"
-
-          Copy-Item `
-            "README.md" `
-            "artifact\README.md"
-
-      # ------------------------------------------------------------
-      # Upload artifact
-      # ------------------------------------------------------------
-      - name: Upload Duck PNGTuber
-        uses: actions/upload-artifact@v4
-        with:
-          name: DuckPNG-Tuber-OBS-32.0.1-Windows-x64
-          path: artifact
-          if-no-files-found: error
